@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <ftxui/component/captured_mouse.hpp>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
@@ -14,18 +15,31 @@
 #include <ftxui/screen/color.hpp>
 #include <ftxui/screen/screen.hpp>
 #include <functional>
+#include <iostream>
 #include <string>
+#include <string_view>
 #include "ftxui-grid-container/grid-container.hpp"
 
 using namespace ftxui;
-constexpr uint8_t GRIDSIZE = 9;
+constexpr auto GRIDSIZE = 9;
 struct Scores {
-  int x = 0, o = 0;
+  uint64_t x = 0, o = 0;
 };
+enum class StateEnum { X = 0, O, NONE, COUNT };
+
+constexpr std::array<std::string_view, 3> State = {"X", "O", " "};
+constexpr std::array<std::string_view, 3> WinnerMessage = {"X wins!", "O wins!",
+                                                           "Draw OX"};
+constexpr std::array<std::string_view, 3> CurrentPlayer = {"Current player: X",
+                                                           "Current player: O"};
+constexpr size_t idx(StateEnum state) {
+  return static_cast<size_t>(state);
+}
+
 using ButtonStateGrid = std::array<std::string, GRIDSIZE>;
-enum STATE { X = 'X', O = 'O', NONE = ' ' };
-std::string checkWinner(const std::array<std::string, GRIDSIZE>& buttonsState) {
-  const std::array<std::array<int, 3>, 8> winningCombinations = {{
+
+StateEnum checkWinner(const ButtonStateGrid& buttonsState) {
+  constexpr std::array<std::array<int, 3>, 8> winningCombinations = {{
       // 8 magic number for all possible solutions for 3x3 table
       std::array<int, 3>{0, 1, 2},  // Row 1
       std::array<int, 3>{3, 4, 5},  // Row 2
@@ -36,58 +50,60 @@ std::string checkWinner(const std::array<std::string, GRIDSIZE>& buttonsState) {
       std::array<int, 3>{0, 4, 8},  // Diagonal 1
       std::array<int, 3>{2, 4, 6}   // Diagonal 2
   }};
-  // TODO: use stl std::find_if
   for (const auto& combination : winningCombinations) {
-    if (buttonsState[combination[0]] != " " &&
-        std::all_of(combination.begin(), combination.end(), [&](int i) {
+    if (buttonsState[combination[0]] != State[idx(StateEnum::NONE)] &&
+        std::all_of(combination.begin(), combination.end(), [&](size_t i) {
           return buttonsState[i] == buttonsState[combination[0]];
         })) {
-      return buttonsState[combination[0]];
+      return buttonsState[combination[0]] == State[idx(StateEnum::X)]
+                 ? StateEnum::X
+                 : StateEnum::O;
     }
   }
-  return "";
+  return StateEnum::NONE;
 }
-void togglePlayer(std::string& currentPlayer) {
-  currentPlayer = (currentPlayer == "X") ? "O" : "X";
+void togglePlayer(StateEnum& currentPlayer) {
+  currentPlayer = (currentPlayer == StateEnum::X) ? StateEnum::O : StateEnum::X;
 }
 
-void updateScoresAndOutput(const std::string& winner,
+void updateScoresAndOutput(const StateEnum& winner,
                            Scores& scores,
-                           std::string& output) {
-  if (winner == "X") {
+                           std::string_view& output) {
+  if (winner == StateEnum::X) {
     scores.x++;
-  } else if (winner == "O") {
+  } else if (winner == StateEnum::O) {
     scores.o++;
   }
-  output = winner.empty() ? " Draw OX " : winner + " wins!";
+  output = WinnerMessage[idx(winner)];
 }
 
 void buttonCallback(size_t index,
                     ButtonStateGrid& buttonsState,
-                    std::string& currentPlayer,
+                    StateEnum& currentPlayer,
                     int& count,
-                    std::string& output,
+                    std::string_view& output,
                     Scores& scores) {
-  if (buttonsState[index] != " ") {
+  if (buttonsState[index] != State[idx(StateEnum::NONE)]) {
     return;
   }
-  buttonsState[index] = currentPlayer;
-  std::string winner = checkWinner(buttonsState);
-  if (!winner.empty() || count == GRIDSIZE - 1) {
+  buttonsState[index] = State[idx(currentPlayer)];
+  StateEnum winner = checkWinner(buttonsState);
+  if (winner != StateEnum::NONE || count == GRIDSIZE - 1) {
     updateScoresAndOutput(winner, scores, output);
-    buttonsState.fill(" ");
+    buttonsState.fill(std::string(State[idx(StateEnum::NONE)]));
     count = 0;
-  } else {
-    ++count;
-    output = "Current player: " + currentPlayer;
-  }
+    togglePlayer(currentPlayer);
 
-  togglePlayer(currentPlayer);
+  } else {
+    togglePlayer(currentPlayer);
+    ++count;
+    output = CurrentPlayer[idx(currentPlayer)];
+  }
 }
 int main() {
   auto screen = ScreenInteractive::TerminalOutput();
-  std::string currentPlayer = "X";
-  std::string output = "Current player: " + currentPlayer;
+  StateEnum currentPlayer = StateEnum::X;
+  std::string_view output = CurrentPlayer[idx(currentPlayer)];
   auto style = size(WIDTH, EQUAL, 8);
   Components buttons(GRIDSIZE);
   ButtonStateGrid buttonsState;
@@ -101,9 +117,11 @@ int main() {
                                   std::ref(output), std::ref(scores))) |
                  style;
   }
+  // Maybe i can improve it
   auto grid = GridContainer({{buttons.begin(), buttons.begin() + 3},
                              {buttons.begin() + 3, buttons.begin() + 6},
                              {buttons.begin() + 6, buttons.end()}});
+
   auto scoresElement = [&]() -> Element {
     return hbox({text("X:"), text(std::to_string(scores.x)), text("|"),
                  text("O:"), text(std::to_string(scores.o))});
@@ -112,7 +130,7 @@ int main() {
     return window(text("TicTacToe") | center,
                   {
                       vbox({
-                          text(output) | border,
+                          text(std::string(output)) | border,
 
                           scoresElement() | center,
                           grid->Render() | center | flex,
