@@ -1,4 +1,4 @@
-// TODO: implement AI/minimax(difficult), insert AI in logic(impossible)
+// TODO: implement AI/minimax(difficult)
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -16,8 +16,10 @@
 #include <ftxui/screen/screen.hpp>
 #include <functional>
 #include <iostream>
+#include <random>
 #include <string>
 #include <string_view>
+#include <vector>
 #include "ftxui-grid-container/grid-container.hpp"
 
 using namespace ftxui;
@@ -30,15 +32,14 @@ enum class StateEnum { X = 0, O, NONE, COUNT };
 constexpr std::array<std::string_view, 3> State = {"X", "O", " "};
 constexpr std::array<std::string_view, 3> WinnerMessage = {"X wins!", "O wins!",
                                                            "Draw OX"};
-constexpr std::array<std::string_view, 3> CurrentPlayer = {"Current player: X",
+constexpr std::array<std::string_view, 2> CurrentPlayer = {"Current player: X",
                                                            "Current player: O"};
 constexpr size_t idx(StateEnum state) {
   return static_cast<size_t>(state);
 }
 
 using ButtonStateGrid = std::array<std::string, GRIDSIZE>;
-
-StateEnum checkWinner(const ButtonStateGrid& buttonsState) {
+StateEnum checkWinner(const ButtonStateGrid& gameState) {
   constexpr std::array<std::array<int, 3>, 8> winningCombinations = {{
       // 8 magic number for all possible solutions for 3x3 table
       std::array<int, 3>{0, 1, 2},  // Row 1
@@ -51,11 +52,11 @@ StateEnum checkWinner(const ButtonStateGrid& buttonsState) {
       std::array<int, 3>{2, 4, 6}   // Diagonal 2
   }};
   for (const auto& combination : winningCombinations) {
-    if (buttonsState[combination[0]] != State[idx(StateEnum::NONE)] &&
+    if (gameState[combination[0]] != State[idx(StateEnum::NONE)] &&
         std::all_of(combination.begin(), combination.end(), [&](size_t i) {
-          return buttonsState[i] == buttonsState[combination[0]];
+          return gameState[i] == gameState[combination[0]];
         })) {
-      return buttonsState[combination[0]] == State[idx(StateEnum::X)]
+      return gameState[combination[0]] == State[idx(StateEnum::X)]
                  ? StateEnum::X
                  : StateEnum::O;
     }
@@ -77,27 +78,88 @@ void updateScoresAndOutput(const StateEnum& winner,
   output = WinnerMessage[idx(winner)];
 }
 
+int bot(const ButtonStateGrid& gameState, StateEnum player) {
+  // Check if AI can win in the next move.
+  for (size_t i = 0; i < GRIDSIZE; ++i) {
+    if (gameState[i] == State[idx(StateEnum::NONE)]) {
+      ButtonStateGrid tempState = gameState;
+      tempState[i] = State[idx(player)];
+      if (checkWinner(tempState) == player) {
+        return i;
+      }
+    }
+  }
+
+  // Check if opponent can win in the next move and block.
+  StateEnum opponent = (player == StateEnum::X) ? StateEnum::O : StateEnum::X;
+  for (size_t i = 0; i < GRIDSIZE; ++i) {
+    if (gameState[i] == State[idx(StateEnum::NONE)]) {
+      ButtonStateGrid tempState = gameState;
+      tempState[i] = State[idx(opponent)];
+      if (checkWinner(tempState) == opponent) {
+        return i;
+      }
+    }
+  }
+
+  // Choose a random available position.
+  std::vector<size_t> availableMoves;
+  for (size_t i = 0; i < GRIDSIZE; ++i) {
+    if (gameState[i] == State[idx(StateEnum::NONE)]) {
+      availableMoves.push_back(i);
+    }
+  }
+  if (!availableMoves.empty()) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, availableMoves.size() - 1);
+    return availableMoves[dis(gen)];
+  }
+
+  // No available moves (unlikely to happen in normal gameplay).
+  return -1;
+}
+size_t findBestMove(const ButtonStateGrid& gameState) {
+  return bot(gameState, StateEnum::O);  // AI player always plays 'O'
+}
 void buttonCallback(size_t index,
-                    ButtonStateGrid& buttonsState,
+                    ButtonStateGrid& gameState,
                     StateEnum& currentPlayer,
                     int& count,
                     std::string_view& output,
                     Scores& scores) {
-  if (buttonsState[index] != State[idx(StateEnum::NONE)]) {
+  if (gameState[index] != State[idx(StateEnum::NONE)]) {
     return;
   }
-  buttonsState[index] = State[idx(currentPlayer)];
-  StateEnum winner = checkWinner(buttonsState);
+  gameState[index] = State[idx(currentPlayer)];
+  StateEnum winner = checkWinner(gameState);
   if (winner != StateEnum::NONE || count == GRIDSIZE - 1) {
     updateScoresAndOutput(winner, scores, output);
-    buttonsState.fill(std::string(State[idx(StateEnum::NONE)]));
+    gameState.fill(std::string(State[idx(StateEnum::NONE)]));
     count = 0;
-    togglePlayer(currentPlayer);
-
   } else {
-    togglePlayer(currentPlayer);
-    ++count;
-    output = CurrentPlayer[idx(currentPlayer)];
+    if (currentPlayer == StateEnum::X) {
+      ++count;
+      output = CurrentPlayer[idx(currentPlayer)];
+      // After player's move, AI should make a move
+      size_t aiMove = findBestMove(gameState);
+      gameState[aiMove] =
+          State[idx(StateEnum::O)];  // AI player always plays 'O'
+      winner = checkWinner(gameState);
+      if (winner != StateEnum::NONE || count == GRIDSIZE - 1) {
+        updateScoresAndOutput(winner, scores, output);
+        gameState.fill(std::string(State[idx(StateEnum::NONE)]));
+        count = 0;
+      } else {
+        ++count;
+        output = CurrentPlayer[idx(currentPlayer)];
+      }
+    } else {
+      // Current player is AI, just update output and toggle player
+      togglePlayer(currentPlayer);
+      ++count;
+      output = CurrentPlayer[idx(currentPlayer)];
+    }
   }
 }
 int main() {
@@ -106,13 +168,13 @@ int main() {
   std::string_view output = CurrentPlayer[idx(currentPlayer)];
   auto style = size(WIDTH, EQUAL, 8);
   Components buttons(GRIDSIZE);
-  ButtonStateGrid buttonsState;
+  ButtonStateGrid gameState;
   Scores scores;
-  buttonsState.fill(" ");
+  gameState.fill(" ");
   int count = 0;
   for (size_t i = 0; i < GRIDSIZE; ++i) {
-    buttons[i] = Button(&buttonsState[i],
-                        std::bind(buttonCallback, i, std::ref(buttonsState),
+    buttons[i] = Button(&gameState[i],
+                        std::bind(buttonCallback, i, std::ref(gameState),
                                   std::ref(currentPlayer), std::ref(count),
                                   std::ref(output), std::ref(scores))) |
                  style;
