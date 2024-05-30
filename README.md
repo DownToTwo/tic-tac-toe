@@ -2,7 +2,14 @@
 
 project using the [FTXUI library](https://github.com/ArthurSonzogni/ftxui)
 
-simply Tic Tac Toe game, nothing else(even without AI xD)
+simply Tic Tac Toe game, nothing else
+
+## Build Requirements
+
+- CMake (version 3.11)
+- GNU Make
+- C++ compiler with support for C++17
+- Optional: ECMAScript (JavaScript), Python
 
 # Build instructions:
 

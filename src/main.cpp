@@ -1,5 +1,4 @@
 // TODO: implement minimax
-// TODO: add logging, csv
 #include <plog/Appenders/ConsoleAppender.h>
 #include <plog/Appenders/RollingFileAppender.h>
 #include <plog/Formatters/CsvFormatter.h>
