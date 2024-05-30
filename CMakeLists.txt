@@ -31,8 +31,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/mingsheng13/grid-container-ftxui
   GIT_TAG master
 )
-
-FetchContent_MakeAvailable(ftxui ftxui-grid-container)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+)
+FetchContent_MakeAvailable(ftxui ftxui-grid-container nlohmann_json)
 
 # Project configuration
 project(tic-tac-toe LANGUAGES CXX VERSION 1.0.0)
@@ -47,7 +51,8 @@ target_link_libraries(tic-tac-toe
   PRIVATE ftxui::screen
   PRIVATE ftxui::dom
   PRIVATE ftxui-grid-container
-)
+  PRIVATE nlohmann_json::nlohmann_json
+  )
 
 # Additional configuration for Emscripten
 if (EMSCRIPTEN)

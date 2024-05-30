@@ -1,9 +1,13 @@
-// TODO: implement AI/minimax(difficult)
+// TODO: implement minimax
+// TODO: add logging, csv
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <ftxui-grid-container/grid-container.hpp>
 #include <ftxui/component/captured_mouse.hpp>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
@@ -16,11 +20,14 @@
 #include <ftxui/screen/screen.hpp>
 #include <functional>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <string>
 #include <string_view>
 #include <vector>
-#include "ftxui-grid-container/grid-container.hpp"
+using nlohmann::json;
+
+using json = json;
 
 using namespace ftxui;
 constexpr auto GRIDSIZE = 9;
@@ -38,8 +45,8 @@ constexpr size_t idx(StateEnum state) {
   return static_cast<size_t>(state);
 }
 
-using ButtonStateGrid = std::array<std::string, GRIDSIZE>;
-StateEnum checkWinner(const ButtonStateGrid& gameState) {
+using GameStateGrid = std::array<std::string, GRIDSIZE>;
+StateEnum checkWinner(const GameStateGrid& gameState) {
   constexpr std::array<std::array<int, 3>, 8> winningCombinations = {{
       // 8 magic number for all possible solutions for 3x3 table
       std::array<int, 3>{0, 1, 2},  // Row 1
@@ -78,11 +85,11 @@ void updateScoresAndOutput(const StateEnum& winner,
   output = WinnerMessage[idx(winner)];
 }
 
-int bot(const ButtonStateGrid& gameState, StateEnum player) {
+int bot(const GameStateGrid& gameState, StateEnum player) {
   // Check if AI can win in the next move.
   for (size_t i = 0; i < GRIDSIZE; ++i) {
     if (gameState[i] == State[idx(StateEnum::NONE)]) {
-      ButtonStateGrid tempState = gameState;
+      GameStateGrid tempState = gameState;
       tempState[i] = State[idx(player)];
       if (checkWinner(tempState) == player) {
         return i;
@@ -94,7 +101,7 @@ int bot(const ButtonStateGrid& gameState, StateEnum player) {
   StateEnum opponent = (player == StateEnum::X) ? StateEnum::O : StateEnum::X;
   for (size_t i = 0; i < GRIDSIZE; ++i) {
     if (gameState[i] == State[idx(StateEnum::NONE)]) {
-      ButtonStateGrid tempState = gameState;
+      GameStateGrid tempState = gameState;
       tempState[i] = State[idx(opponent)];
       if (checkWinner(tempState) == opponent) {
         return i;
@@ -119,11 +126,11 @@ int bot(const ButtonStateGrid& gameState, StateEnum player) {
   // No available moves (unlikely to happen in normal gameplay).
   return -1;
 }
-size_t findBestMove(const ButtonStateGrid& gameState) {
+size_t findBestMove(const GameStateGrid& gameState) {
   return bot(gameState, StateEnum::O);  // AI player always plays 'O'
 }
 void buttonCallback(size_t index,
-                    ButtonStateGrid& gameState,
+                    GameStateGrid& gameState,
                     StateEnum& currentPlayer,
                     int& count,
                     std::string_view& output,
@@ -162,15 +169,51 @@ void buttonCallback(size_t index,
     }
   }
 }
+
+Scores parseScoresFromFile(const std::filesystem::path& filePath) {
+  if (!std::filesystem::exists(filePath)) {
+    // If file doesn't exist, create and initialize it
+    std::ofstream ofs(filePath);
+    json data = {{"wins", {{"X", 0}, {"O", 0}}}};
+    ofs << data.dump(4);  // Write formatted JSON to file
+    return {0, 0};        // Return initialized scores
+  }
+
+  std::ifstream ifs(filePath);
+  json data;
+  ifs >> data;  // Read JSON from file
+
+  return {data["wins"]["X"], data["wins"]["O"]};  // Extract and return scores
+}
+
+void writeScoresToFile(const std::filesystem::path& filePath,
+                       const Scores& scores) {
+  json data;
+  if (std::filesystem::exists(filePath)) {
+    std::ifstream ifs(filePath);
+    ifs >> data;  // Read existing JSON from file
+  } else {
+    // If file doesn't exist, create an empty JSON object
+    data = {{"wins", {{"X", 0}, {"O", 0}}}};
+  }
+
+  // Update scores in the JSON object
+  data["wins"]["X"] = scores.x;
+  data["wins"]["O"] = scores.o;
+
+  std::ofstream ofs(filePath);
+  ofs << data.dump(4);  // Write formatted JSON to file
+}
+
 int main() {
   auto screen = ScreenInteractive::TerminalOutput();
   StateEnum currentPlayer = StateEnum::X;
   std::string_view output = CurrentPlayer[idx(currentPlayer)];
   auto style = size(WIDTH, EQUAL, 8);
   Components buttons(GRIDSIZE);
-  ButtonStateGrid gameState;
+  GameStateGrid gameState;
   Scores scores;
-  gameState.fill(" ");
+  gameState.fill(std::string(State[idx(StateEnum::NONE)]));
   int count = 0;
   for (size_t i = 0; i < GRIDSIZE; ++i) {
     buttons[i] = Button(&gameState[i],
@@ -183,6 +226,9 @@ int main() {
   auto grid = GridContainer({{buttons.begin(), buttons.begin() + 3},
                              {buttons.begin() + 3, buttons.begin() + 6},
                              {buttons.begin() + 6, buttons.end()}});
+  const std::filesystem::path filePath{"wins.json"};
+
+  scores = parseScoresFromFile(filePath);
 
   auto scoresElement = [&]() -> Element {
     return hbox({text("X:"), text(std::to_string(scores.x)), text("|"),
@@ -201,6 +247,7 @@ int main() {
            size(WIDTH, EQUAL, 30) | center;
   });
   screen.Loop(renderer);
+  writeScoresToFile(filePath, scores);
   std::cout << "HEY";
   return 0;
 }
