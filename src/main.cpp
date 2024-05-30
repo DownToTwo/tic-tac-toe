@@ -1,5 +1,12 @@
 // TODO: implement minimax
 // TODO: add logging, csv
+#include <plog/Appenders/ConsoleAppender.h>
+#include <plog/Appenders/RollingFileAppender.h>
+#include <plog/Formatters/CsvFormatter.h>
+#include <plog/Formatters/TxtFormatter.h>
+#include <plog/Init.h>
+#include <plog/Log.h>
+#include <plog/Severity.h>
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -25,6 +32,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "plog/Logger.h"
 using nlohmann::json;
 
 using json = json;
@@ -46,6 +54,7 @@ constexpr size_t idx(StateEnum state) {
 }
 
 using GameStateGrid = std::array<std::string, GRIDSIZE>;
+
 StateEnum checkWinner(const GameStateGrid& gameState) {
   constexpr std::array<std::array<int, 3>, 8> winningCombinations = {{
       // 8 magic number for all possible solutions for 3x3 table
@@ -127,6 +136,7 @@ int bot(const GameStateGrid& gameState, StateEnum player) {
   return -1;
 }
 size_t findBestMove(const GameStateGrid& gameState) {
+  PLOG_NONE << CurrentPlayer[idx(StateEnum::O)];
   return bot(gameState, StateEnum::O);  // AI player always plays 'O'
 }
 void buttonCallback(size_t index,
@@ -154,6 +164,7 @@ void buttonCallback(size_t index,
           State[idx(StateEnum::O)];  // AI player always plays 'O'
       winner = checkWinner(gameState);
       if (winner != StateEnum::NONE || count == GRIDSIZE - 1) {
+        PLOG_NONE << output;
         updateScoresAndOutput(winner, scores, output);
         gameState.fill(std::string(State[idx(StateEnum::NONE)]));
         count = 0;
@@ -161,13 +172,9 @@ void buttonCallback(size_t index,
         ++count;
         output = CurrentPlayer[idx(currentPlayer)];
       }
-    } else {
-      // Current player is AI, just update output and toggle player
-      togglePlayer(currentPlayer);
-      ++count;
-      output = CurrentPlayer[idx(currentPlayer)];
     }
   }
+  PLOG_NONE << output;
 }
 
 Scores parseScoresFromFile(const std::filesystem::path& filePath) {
@@ -213,7 +220,12 @@ int main() {
   Components buttons(GRIDSIZE);
   GameStateGrid gameState;
   Scores scores;
+  plog::RollingFileAppender<plog::CsvFormatter> fileAppender("logs.csv", 10000,
+                                                             3);
+
+  plog::init(plog::none, &fileAppender);
   gameState.fill(std::string(State[idx(StateEnum::NONE)]));
+
   int count = 0;
   for (size_t i = 0; i < GRIDSIZE; ++i) {
     buttons[i] = Button(&gameState[i],
@@ -234,6 +246,7 @@ int main() {
     return hbox({text("X:"), text(std::to_string(scores.x)), text("|"),
                  text("O:"), text(std::to_string(scores.o))});
   };
+  PLOG_NONE << "GAME STARTED";
   auto renderer = Renderer(grid, [&] {
     return window(text("TicTacToe") | center,
                   {
